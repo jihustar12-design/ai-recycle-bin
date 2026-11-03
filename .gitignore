@@ -1,0 +1,20 @@
+# 비밀값 (Wi-Fi, 서버 주소)
+firmware/smart_bin/secrets.h
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# DB / 빌드 산출물
+server/data/
+*.db
+build/
+firmware/tests/test_decision
+
+# OS
+.DS_Store
