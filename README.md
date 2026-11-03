@@ -22,6 +22,7 @@ ESP32-S3가 **기기 안에서** 쓰레기를 분류(캔/페트/종이/일반)�
 
 ```
 ai-recycle-bin/
+├── model/                  # 데이터셋 생성 스크립트 + Edge Impulse 학습 가이드
 ├── firmware/
 │   ├── smart_bin/          # Arduino 스케치
 │   │   ├── smart_bin.ino   # 메인 루프
@@ -89,9 +90,10 @@ make -C firmware/tests                              # 펌웨어 판단 로직
 
 - [x] 서버 · DB · 대시보드 · 가짜 장치 · CI
 - [x] 펌웨어 골격 (가짜 분류기로 서보/서버 연동 가능)
-- [ ] 스마트폰으로 데이터 수집 → Edge Impulse v0 모델
+- [x] 공개 데이터(TrashNet) 데이터셋 구성 → `model/README.md`
+- [ ] Edge Impulse 학습 → v1 모델
 - [ ] (보드) 카메라·서보·센서 동작 확인
-- [ ] (보드) ESP32 카메라 데이터로 v1 모델 재학습 → `USE_EDGE_IMPULSE=1`
+- [ ] (보드) 모델 연결 → `USE_EDGE_IMPULSE=1`
 - [ ] 상자 조립 · 시연 영상
 
 ## 보드 연결 (하드웨어 준비 후)

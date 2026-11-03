@@ -12,7 +12,12 @@
 //  3. 아래 include 이름을 내보낸 라이브러리 이름에 맞게 변경
 //  4. Edge Impulse 예제(esp32_camera)의 ei_camera_get_data / 리사이즈 코드를 참고해 구현
 //  5. config.h 의 USE_EDGE_IMPULSE 를 1, MODEL_VERSION 을 "v0-phone" 등으로 변경
-//  * 라벨 순서는 decision.h 의 Label enum 과 같아야 한다 (ei_classifier_inferencing_categories 확인)
+//  * Edge Impulse 라벨은 알파벳순이라 Label enum 순서와 다르다. 결과는 이름으로 옮길 것:
+//
+//      for (size_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; ++i) {
+//        int idx = smartbin::labelFromName(result.classification[i].label);
+//        if (idx >= 0) scores[idx] = result.classification[i].value;
+//      }
 // ─────────────────────────────────────────────────────────────────────────────
 #error "Edge Impulse 라이브러리를 연결한 뒤 이 줄을 지우고 classify() 를 구현하세요"
 #else

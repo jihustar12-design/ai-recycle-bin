@@ -21,7 +21,7 @@ jobs:
           cache: pip
           cache-dependency-path: server/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - run: ruff check . ../tools
+      - run: ruff check . ../tools ../model
       - run: pytest -q
 
   e2e:

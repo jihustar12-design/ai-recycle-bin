@@ -18,3 +18,7 @@ firmware/tests/test_decision
 
 # OS
 .DS_Store
+
+# 학습 데이터 (model/prepare_dataset.py 로 다시 만들 수 있음)
+model/dataset/
+model/.cache/

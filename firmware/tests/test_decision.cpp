@@ -53,6 +53,21 @@ static void test_label_names_roundtrip() {
   CHECK(labelFromName("glass") == -1);
 }
 
+// Edge Impulse 는 알파벳순으로 결과를 준다 → 이름으로 매핑해야 올바른 칸으로 간다
+static void test_edge_impulse_alphabetical_mapping() {
+  const char* eiLabels[] = {"can", "empty", "general", "paper", "pet"};
+  const float eiValues[] = {0.02f, 0.01f, 0.03f, 0.04f, 0.90f};
+  float scores[LABEL_COUNT] = {0};
+  for (int i = 0; i < 5; ++i) {
+    int idx = labelFromName(eiLabels[i]);
+    CHECK(idx >= 0);
+    if (idx >= 0) scores[idx] = eiValues[i];
+  }
+  Decision d = decide(scores, LABEL_COUNT, 0.7f);
+  CHECK(d.label == LBL_PET);
+  CHECK(d.bin == 1);
+}
+
 static void test_buffer_keeps_order_and_drops_oldest() {
   LogBuffer<3> buf;
   for (int i = 0; i < 5; ++i) {
@@ -91,6 +106,7 @@ int main() {
   test_empty_does_not_actuate();
   test_bin_mapping();
   test_label_names_roundtrip();
+  test_edge_impulse_alphabetical_mapping();
   test_buffer_keeps_order_and_drops_oldest();
   test_json_matches_server_schema();
   if (failures) {
