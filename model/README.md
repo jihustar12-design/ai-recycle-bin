@@ -1,85 +1,92 @@
-# 모델: 공개 데이터(TrashNet)로 학습
+# 모델: 공개 데이터(TrashNet) 기반 학습
 
-## 1. 데이터셋 만들기
+## 1. 데이터셋 생성
 
 ```bash
-cd ~/Desktop/피지컬ai/ai-recycle-bin
-python3 -m pip install pillow        # 처음 한 번
+python3 -m pip install pillow        # 최초 1회
 python3 model/prepare_dataset.py
 ```
 
-결과: `model/dataset/train/` 1,640장, `model/dataset/test/` 410장 (클래스당 410장, 8:2 분할).
-파일명 맨 앞이 라벨이에요 (`can.metal12.jpg`). 이 폴더는 `.gitignore` 처리되어 GitHub에 올라가지 않아요.
+- 결과: `model/dataset/train/` 1,640장, `model/dataset/test/` 410장 (클래스당 410장, 8:2 분할)
+- 파일명 앞부분이 라벨임 (예: `can.metal12.jpg`)
+- 학습·평가 분할은 원본 사진 단위로 수행하여 동일 사진이 양쪽에 포함되지 않도록 함
+- 생성된 데이터는 `.gitignore` 대상이며, 스크립트로 동일하게 재생성 가능 (seed 고정)
 
-| 라벨 | 원본 (TrashNet) | 칸 |
+| 라벨 | 원본 (TrashNet) | 투입 칸 |
 |---|---|---|
 | can | metal | 0 |
 | pet | plastic | 1 |
 | paper | paper + cardboard | 2 |
 | general | trash + glass | 3 |
-| empty | 사진의 빈 배경을 잘라 합성 | (동작 안 함) |
+| empty | 원본 사진의 빈 배경을 잘라 합성 | 동작 안 함 |
 
-출처: TrashNet — Gary Thung, Mindy Yang (Stanford CS229, MIT License) https://github.com/garythung/trashnet
+출처: TrashNet (Gary Thung, Mindy Yang, Stanford CS229), MIT License, https://github.com/garythung/trashnet
 
-## 2. 맥에서 학습 (권장)
+## 2. 학습
 
-Edge Impulse 무료 계정은 학습 시간이 **월 25분**이라 160×160 고정확도 설정을 끝까지 돌릴 수 없어요.
-그래서 맥에서 직접 학습합니다. 시간 제한이 없고 설정도 마음대로 바꿀 수 있어요.
+Edge Impulse 무료 계정은 학습 시간이 월 25분으로 제한되어 160×160 설정의 학습을 완료할 수 없었습니다.
+따라서 로컬(macOS)에서 TensorFlow로 학습했습니다.
 
 ```bash
-cd ~/Desktop/피지컬ai/ai-recycle-bin
-python3 -m venv model/.venv
+python3 -m venv model/.venv          # Python 3.10~3.12 사용 (TensorFlow 지원 버전)
 source model/.venv/bin/activate
-pip install -r model/requirements.txt     # 처음 한 번 (TensorFlow, 몇 분 걸림)
-python model/train.py --fast     # 빠른 모드 (약 3~5분) — 먼저 이걸로
-python model/train.py            # 전체 모드 (20~40분) — 정확도를 더 올리고 싶을 때
+pip install -r model/requirements.txt
+python model/train.py --fast         # 빠른 모드 (약 3~5분) ← 제출 모델
+python model/train.py                # 전체 모드 (20~40분, 미세조정 포함)
 ```
 
-| 모드 | 방식 | 시간 | 정확도 |
+| 모드 | 방식 | 소요 시간 | 비고 |
 |---|---|---|---|
-| `--fast` | 사전학습 모델로 특징을 한 번만 뽑고 분류기만 학습 | 약 3~5분 | 조금 낮을 수 있음 |
-| 기본 | 매 epoch 증강 + 베이스 미세조정 | 20~40분 | 가장 높음 |
+| `--fast` | 사전학습 모델로 특징을 1회 추출한 뒤 분류기만 학습 (뒤집기·회전 증강 포함) | 약 3~5분 | **제출 모델** |
+| 기본 | 1단계 분류기 학습 → 2단계 베이스 모델 뒷부분 미세조정, 매 epoch 증강 | 20~40분 | 정확도 향상 여지 |
 
-- 1단계(베이스 고정) → 2단계(미세조정) 순서로 자동 진행, 성능이 더 안 오르면 일찍 멈춤
-- 끝나면 test 세트 **정확도와 혼동 행렬**을 float32 / int8(ESP32용) 둘 다 출력
-- 결과물: `model/export/`
-  - `model_int8.tflite` — ESP32에 들어갈 모델
-  - `model_data.h` — 펌웨어에 바로 include 하는 C 배열
-  - `metrics.json` — 정확도·혼동 행렬 (발표 자료용)
+- 공통 설정: MobileNetV2 α0.35 (ImageNet 사전학습), 입력 160×160 RGB, label smoothing 0.05, early stopping
+- 학습 종료 시 test 세트에 대한 정확도와 혼동 행렬을 float32 / int8 모델 각각 출력함
+- 산출물 (`model/export/`)
+  - `model_int8.tflite`: ESP32 탑재용 전정수(int8) 양자화 모델
+  - `model_data.h`: 펌웨어에서 include하는 C 배열 (`firmware/smart_bin/model_data.h`에도 자동 복사)
+  - `metrics.json`: 정확도, 혼동 행렬, 클래스별 precision/recall
 
 옵션 예시
 
 ```bash
-python model/train.py --size 96      # 더 빠른 추론 (정확도 약간 하락)
-python model/train.py --alpha 0.5    # 더 정확 (모델 커지고 ESP32에서 느려짐)
+python model/train.py --size 96      # 입력 축소: 추론 속도 향상, 정확도 소폭 하락
+python model/train.py --alpha 0.5    # 모델 확대: 정확도 향상, 모델 크기·추론 시간 증가
 ```
 
-> Edge Impulse 프로젝트(`ai-recycle-bin`)에는 데이터와 Impulse(160×160, MobileNetV2 0.35) 설정이 올라가 있어요.
-> 학습 시간이 초기화되면(매월) 거기서 비교 학습을 해 볼 수도 있어요.
-
-## 3. 정확도 확인
+## 3. 정확도 검증
 
 ```bash
-python model/evaluate.py                       # int8 모델로 test 410장 분류 → 정확도·혼동 행렬
-make -C firmware/tests model TFLM=<esp-tflite-micro 경로> DUMP=<evaluate.py --dump 폴더>   # 펌웨어 C++ 코드로 같은 평가
+python model/evaluate.py --min-accuracy 0.78
+make -C firmware/tests model TFLM=<esp-tflite-micro 경로> DUMP=<evaluate.py --dump 출력 폴더>
 ```
 
-CI(`model` 작업)가 push 할 때마다 두 가지를 모두 실행하고, 정확도가 78% 아래로 떨어지면 실패해요.
-결과는 GitHub Actions 실행 화면의 Summary 에 표로 나와요.
+- `evaluate.py`: 저장소의 int8 모델로 test 410장을 분류하여 정확도와 혼동 행렬을 출력함. 전처리는 펌웨어와 동일한 알고리즘을 numpy로 구현함
+- `make ... model`: 펌웨어 C++ 코드(`preprocess.h`, `model_runner.cpp`)와 TFLite Micro로 동일 평가를 수행하고, RGB565(카메라 형식) 입력 결과도 함께 측정함
+- CI의 `Model accuracy` 작업이 push마다 두 검증을 모두 실행하며, 정확도가 78% 미만이면 실패 처리함. 결과는 GitHub Actions 실행 화면의 Summary에 표로 출력됨
 
-## 4. 정확도를 최대로 끌어올리는 포인트
+| 측정 | 결과 |
+|---|---|
+| int8 모델 (Python, CI) | 81.2% |
+| int8 모델 (학습 직후 TensorFlow) | 81.5% |
+| float32 모델 | 84.4% |
+| 펌웨어 C++ / TFLite Micro, RGB888 입력 | 82.2% |
+| 펌웨어 C++ / TFLite Micro, RGB565 입력 | 78.5% |
+| Python과 C++ 예측 일치율 | 97.8% |
 
-1. **상자 안 촬영 환경을 TrashNet과 똑같이 만들기** (가장 중요)
-   - 바닥을 **흰색 무광 보드**로 (TrashNet이 흰 포스터보드 위에서 촬영됨)
-   - 위/앞에서 고르게 비추는 **흰색 LED**, 그림자 최소화
-   - 카메라는 물체 전체가 화면의 50~80%를 차지하는 거리
-2. **학습과 추론의 전처리를 같게** — 4:3 이미지 → 가운데 정사각형 크롭 → 160×160 (train.py 와 펌웨어가 동일하게)
-3. **신뢰도 0.70 미만은 일반 칸 + 확인 필요** (`config.h` CONF_THRESHOLD). 대시보드 오분류 신고로 약점 파악
-4. 버전 기록: `config.h` 의 `MODEL_VERSION` 을 `v1-trashnet-160` 처럼 바꿔 대시보드에서 비교
+## 4. 정확도 확보를 위한 장치 구성 지침
 
-## 5. 알려진 한계
+1. **장치 내부 촬영 환경을 TrashNet과 유사하게 구성** (가장 중요)
+   - 바닥: 흰색 무광 보드 (TrashNet은 흰 포스터보드 위에서 촬영됨)
+   - 조명: 위/앞에서 고르게 비추는 흰색 LED, 그림자 최소화
+   - 거리: 물체가 화면의 50~80%를 차지하도록 카메라 배치
+2. **학습·추론 전처리 일치**: 4:3 이미지 → 가운데 정사각형 크롭 → 160×160 (train.py, evaluate.py, 펌웨어 동일)
+3. **신뢰도 기준**: 0.70 미만은 일반 칸 투입 및 `needs_review` 기록 (`config.h`의 `CONF_THRESHOLD`)
+4. **버전 관리**: 재학습 시 `config.h`의 `MODEL_VERSION`을 변경하여 대시보드에서 모델별 성능 비교
 
-- TrashNet은 미국 제품 위주라 한국 캔·페트 라벨과 모양이 다를 수 있음
-- `plastic`에는 페트병 외 플라스틱 용기도 섞여 있음
-- `general`의 2/3가 유리병이라 과자 봉지 같은 비닐류는 약할 수 있음 → 낮은 신뢰도로 일반 칸에 가는 경우가 많음
-- 카메라 형식(RGB565, 색 단계가 적음)에서는 PC 측정 기준 약 3%p 낮아짐 (82.2% → 78.5%)
+## 5. 한계
+
+- TrashNet은 해외 제품 위주로 구성되어 국내 캔·페트병의 라벨 및 형태와 차이가 있을 수 있음
+- `plastic` 클래스에 페트병 외 플라스틱 용기가 포함되어 있음
+- `general` 클래스의 약 2/3가 유리병이어서 비닐류 등 일반 쓰레기 인식이 약할 수 있으며, 이 경우 낮은 신뢰도로 일반 칸에 투입됨
+- 카메라 형식(RGB565, 색 단계 감소)에서는 PC 측정 기준 약 3.7%p 낮게 측정됨 (82.2% → 78.5%)
