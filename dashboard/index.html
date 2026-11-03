@@ -18,9 +18,10 @@
   h1 { margin: 0; font-size: 22px; }
   .status { color: var(--muted); font-size: 13px; }
   .status b { color: var(--paper); }
-  main { padding: 8px 24px 32px; display: grid; gap: 16px; }
+  main { padding: 8px 24px 32px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 760px) { main, header { padding-left: 16px; padding-right: 16px; } }
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card { min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
   .kpi .label { color: var(--muted); font-size: 13px; }
   .kpi .value { font-size: 28px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
   h2 { font-size: 15px; margin: 0 0 12px; }
@@ -29,7 +30,7 @@
   .track { background: var(--line); border-radius: 6px; height: 14px; overflow: hidden; }
   .fill { height: 100%; border-radius: 6px; transition: width .4s; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
   @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: left; }
@@ -38,6 +39,21 @@
   .review { color: var(--warn); font-weight: 600; }
   select { font-size: 12px; padding: 2px 4px; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
   .table-wrap { overflow-x: auto; }
+  .latest { display: grid; grid-template-columns: minmax(220px, 360px) 1fr; gap: 20px; align-items: center; }
+  @media (max-width: 760px) { .latest { grid-template-columns: 1fr; } }
+  .latest img, .latest .noimg { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; background: var(--line); }
+  .latest .noimg { display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+  .latest .big { font-size: 40px; font-weight: 800; margin: 6px 0; }
+  .latest .meta { color: var(--muted); font-size: 14px; line-height: 1.7; }
+  .bar-conf { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; max-width: 320px; margin-top: 6px; }
+  .bar-conf > div { height: 100%; }
+  .flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { box-shadow: 0 0 0 4px var(--paper); } to { box-shadow: 0 0 0 0 transparent; } }
+  td img.thumb { width: 56px; height: 42px; object-fit: cover; border-radius: 6px; cursor: zoom-in; display: block; }
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: none; place-items: center; z-index: 10; cursor: zoom-out; padding: 16px; }
+  #modal.open { display: grid; }
+  #modal img { max-width: min(900px, 100%); max-height: 80vh; border-radius: 10px; }
+  #modal p { color: #fff; text-align: center; margin: 10px 0 0; }
 </style>
 </head>
 <body>
@@ -46,6 +62,19 @@
   <div class="status" id="status">연결 중…</div>
 </header>
 <main>
+  <section class="card" id="latest-card">
+    <h2>방금 들어온 쓰레기</h2>
+    <div class="latest">
+      <div id="latest-img"><div class="noimg">아직 투입이 없습니다</div></div>
+      <div>
+        <div class="meta" id="latest-time">-</div>
+        <div class="big" id="latest-label">-</div>
+        <div class="meta" id="latest-detail"></div>
+        <div class="bar-conf"><div id="latest-bar" style="width:0"></div></div>
+      </div>
+    </div>
+  </section>
+
   <section class="kpis">
     <div class="card kpi"><div class="label">총 투입</div><div class="value" id="k-total">-</div></div>
     <div class="card kpi"><div class="label">평균 신뢰도</div><div class="value" id="k-conf">-</div></div>
@@ -74,12 +103,13 @@
     <h2>최근 이벤트</h2>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>#</th><th>시각</th><th>장치</th><th>분류</th><th>신뢰도</th><th>칸</th><th>모델</th><th>오분류 신고</th></tr></thead>
+        <thead><tr><th>사진</th><th>#</th><th>시각</th><th>장치</th><th>분류</th><th>신뢰도</th><th>칸</th><th>모델</th><th>오분류 신고</th></tr></thead>
         <tbody id="events"></tbody>
       </table>
     </div>
   </section>
 </main>
+<div id="modal"><div><img id="modal-img" alt="" /><p id="modal-cap"></p></div></div>
 <script>
   const NAMES = { can: "캔", pet: "페트", paper: "종이", general: "일반", empty: "빈칸" };
   const color = (l) => getComputedStyle(document.documentElement).getPropertyValue("--" + l).trim();
@@ -110,11 +140,37 @@
       <td>${m.feedback ? pct(m.misclassification_rate) : "-"}</td></tr>`).join("") || `<tr><td colspan="5">데이터 없음</td></tr>`;
   }
 
+  const BIN_NAMES = ["캔", "페트", "종이", "일반"];
+  const timeOf = (e) => new Date(e.received_at.endsWith("Z") ? e.received_at : e.received_at + "Z");
+  const imgUrl = (e) => `/api/events/${e.id}/image`;
+  let lastLatestId = null;
+
+  function renderLatest(e) {
+    if (!e) return;
+    const name = NAMES[e.label] || e.label;
+    $("latest-img").innerHTML = e.has_image
+      ? `<img src="${imgUrl(e)}" alt="${name}" data-zoom="${e.id}" data-cap="${name} · ${pct(e.confidence)}" />`
+      : `<div class="noimg">사진 없음 (오프라인 중 기록)</div>`;
+    $("latest-time").textContent = `#${e.id} · ${timeOf(e).toLocaleTimeString("ko-KR")} · ${e.device_id}`;
+    $("latest-label").textContent = name;
+    $("latest-label").style.color = color(e.label);
+    $("latest-detail").innerHTML = `신뢰도 <b>${pct(e.confidence)}</b> → <b>${BIN_NAMES[e.bin]}</b> 칸` +
+      (e.needs_review ? ' <span class="review">확인 필요</span>' : "") + ` · 추론 ${e.latency_ms} ms`;
+    $("latest-bar").style.width = pct(e.confidence);
+    $("latest-bar").style.background = color(e.label);
+    if (lastLatestId !== null && lastLatestId !== e.id) {
+      const card = $("latest-card");
+      card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
+    }
+    lastLatestId = e.id;
+  }
+
   function renderEvents(rows) {
     $("events").innerHTML = rows.map((e) => `
       <tr>
+        <td>${e.has_image ? `<img class="thumb" loading="lazy" src="${imgUrl(e)}" alt="" data-zoom="${e.id}" data-cap="#${e.id} ${NAMES[e.label] || e.label} · ${pct(e.confidence)}" />` : "-"}</td>
         <td>${e.id}</td>
-        <td>${new Date(e.received_at.endsWith("Z") ? e.received_at : e.received_at + "Z").toLocaleTimeString("ko-KR")}</td>
+        <td>${timeOf(e).toLocaleTimeString("ko-KR")}</td>
         <td>${e.device_id}</td>
         <td><span class="tag" style="background:${color(e.label)}">${NAMES[e.label] || e.label}</span>
             ${e.needs_review ? '<span class="review">확인 필요</span>' : ""}</td>
@@ -125,7 +181,7 @@
               <option value="">정답 선택</option>
               ${Object.entries(NAMES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
             </select></td>
-      </tr>`).join("") || `<tr><td colspan="8">아직 이벤트가 없습니다</td></tr>`;
+      </tr>`).join("") || `<tr><td colspan="9">아직 이벤트가 없습니다</td></tr>`;
   }
 
   document.addEventListener("change", async (ev) => {
@@ -147,14 +203,27 @@
       const [s, ev] = await Promise.all([getJSON("/api/stats"), getJSON("/api/events?limit=20")]);
       renderStats(s);
       renderEvents(ev);
+      renderLatest(ev[0]);
       $("status").innerHTML = `<b>●</b> 실시간 · ${new Date().toLocaleTimeString("ko-KR")} 갱신`;
     } catch (e) {
       $("status").textContent = "서버 연결 실패: " + e.message;
     }
   }
 
+  // 사진 크게 보기
+  document.addEventListener("click", (ev) => {
+    const t = ev.target;
+    if (t.matches && t.matches("img[data-zoom]")) {
+      $("modal-img").src = t.src;
+      $("modal-cap").textContent = t.dataset.cap || "";
+      $("modal").classList.add("open");
+    } else if (t.closest && t.closest("#modal")) {
+      $("modal").classList.remove("open");
+    }
+  });
+
   refresh();
-  setInterval(refresh, 3000);
+  setInterval(refresh, 2000);
 </script>
 </body>
 </html>

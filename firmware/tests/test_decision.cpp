@@ -100,6 +100,15 @@ static void test_json_matches_server_schema() {
   CHECK(toJson(e, "bin-01", "0.1.0", "v1", tiny, sizeof(tiny)) == -1);  // 잘림 감지
 }
 
+static void test_parse_event_id() {
+  CHECK(parseEventId("{\"id\":123}") == 123);
+  CHECK(parseEventId("{\"id\": 7, \"x\":1}") == 7);
+  CHECK(parseEventId("{\"ids\":[1]}") == -1);
+  CHECK(parseEventId("{\"id\":\"a\"}") == -1);
+  CHECK(parseEventId("") == -1);
+  CHECK(parseEventId(nullptr) == -1);
+}
+
 int main() {
   test_high_confidence_goes_to_its_bin();
   test_low_confidence_goes_to_general_and_flags_review();
@@ -109,6 +118,7 @@ int main() {
   test_edge_impulse_alphabetical_mapping();
   test_buffer_keeps_order_and_drops_oldest();
   test_json_matches_server_schema();
+  test_parse_event_id();
   if (failures) {
     printf("%d check(s) failed\n", failures);
     return 1;

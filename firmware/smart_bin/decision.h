@@ -115,4 +115,17 @@ inline int toJson(const SortEvent& e, const char* deviceId, const char* fw, cons
   return (n < 0 || (size_t)n >= len) ? -1 : n;
 }
 
+// 서버 응답 {"id":123} 에서 이벤트 id 를 꺼낸다. 없으면 -1.
+inline long parseEventId(const char* resp) {
+  if (!resp) return -1;
+  const char* p = strstr(resp, "\"id\"");
+  if (!p) return -1;
+  p += 4;
+  while (*p == ' ' || *p == ':') ++p;
+  if (*p < '0' || *p > '9') return -1;
+  long v = 0;
+  while (*p >= '0' && *p <= '9') v = v * 10 + (*p++ - '0');
+  return v;
+}
+
 }  // namespace smartbin

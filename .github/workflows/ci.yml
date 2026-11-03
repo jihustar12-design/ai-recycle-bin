@@ -43,13 +43,18 @@ jobs:
         run: |
           uvicorn app.main:app --port 8000 &
           for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 1; done
-      - name: Run fake device (30% 전송 실패 포함)
-        run: python tools/fake_device.py --count 30 --interval 0 --fail-rate 0.3 --seed 42
+      - name: Run fake device (30% 전송 실패 포함, 샘플 사진 전송)
+        run: python tools/fake_device.py --count 30 --interval 0 --fail-rate 0.3 --seed 42 --images tools/samples
       - name: Verify DB
         run: |
           total=$(curl -sf localhost:8000/api/stats | python -c "import sys, json; print(json.load(sys.stdin)['total'])")
           echo "total events in DB: $total"
           test "$total" -eq 30
+          photos=$(curl -sf localhost:8000/api/stats | python -c "import sys, json; print(json.load(sys.stdin)['with_image'])")
+          echo "events with photo: $photos"
+          test "$photos" -gt 0
+          first=$(curl -sf "localhost:8000/api/events?limit=1" | python -c "import sys, json; e=json.load(sys.stdin)[0]; print(e['id'] if e['has_image'] else '')")
+          if [ -n "$first" ]; then curl -sf -o /tmp/p.jpg "localhost:8000/api/events/$first/image" && file /tmp/p.jpg | grep -q JPEG; fi
           python -c "import sqlite3; print(sqlite3.connect('/tmp/e2e.db').execute('SELECT label, COUNT(*) FROM sort_events GROUP BY label').fetchall())"
 
   firmware-logic:

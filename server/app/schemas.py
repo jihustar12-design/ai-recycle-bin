@@ -24,6 +24,7 @@ class SortEventIn(BaseModel):
 class SortEventOut(SortEventIn):
     id: int
     received_at: datetime
+    has_image: bool = False
 
 
 class HeartbeatIn(BaseModel):
@@ -43,6 +44,7 @@ class Stats(BaseModel):
     total: int
     by_label: dict[str, int]
     needs_review: int
+    with_image: int
     feedback_count: int
     misclassified: int
     misclassification_rate: float

@@ -35,6 +35,8 @@ static const int BIN_ANGLES[4] = {20, 70, 120, 170};
 #define SERVO_HOLD_MS    900
 
 // 로그
+#define SEND_IMAGES           1   // 분류 순간의 사진을 대시보드로 보낼지
+#define JPEG_QUALITY          80  // 0~100, 높을수록 선명 (QVGA 기준 약 10~25KB)
 #define LOG_BUFFER_SIZE       64
 #define HEARTBEAT_INTERVAL_MS 30000
 #define HTTP_TIMEOUT_MS       3000

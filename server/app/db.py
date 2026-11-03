@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS sort_events (
     bin           INTEGER NOT NULL,
     needs_review  INTEGER NOT NULL DEFAULT 0,
     fw_version    TEXT    NOT NULL,
-    model_version TEXT    NOT NULL
+    model_version TEXT    NOT NULL,
+    has_image     INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_events_received ON sort_events(received_at);
 
@@ -58,6 +59,16 @@ def connect() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def image_dir() -> Path:
+    """분류 순간의 사진 저장 위치 (기본: DB 파일 옆 images/)."""
+    return Path(os.environ.get("IMAGE_DIR", str(Path(db_path()).parent / "images")))
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # 이전 버전 DB 에는 has_image 컬럼이 없으므로 추가
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(sort_events)")}
+        if "has_image" not in cols:
+            conn.execute("ALTER TABLE sort_events ADD COLUMN has_image INTEGER NOT NULL DEFAULT 0")
+    image_dir().mkdir(parents=True, exist_ok=True)

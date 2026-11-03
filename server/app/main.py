@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -12,6 +12,7 @@ from . import db
 from .schemas import LABELS, FeedbackIn, HeartbeatIn, SortEventIn, SortEventOut, Stats
 
 DASHBOARD_DIR = Path(os.environ.get("DASHBOARD_DIR", Path(__file__).resolve().parents[2] / "dashboard"))
+MAX_IMAGE_BYTES = 300 * 1024  # QVGA JPEG 는 보통 10~30KB
 
 
 @asynccontextmanager
@@ -77,7 +78,36 @@ def list_events(
     args.append(limit)
     with db.connect() as conn:
         rows = conn.execute(sql, args).fetchall()
-    return [{**dict(r), "needs_review": bool(r["needs_review"])} for r in rows]
+    return [{**dict(r), "needs_review": bool(r["needs_review"]), "has_image": bool(r["has_image"])} for r in rows]
+
+
+# ---------- 분류 순간의 사진 ----------
+@app.post("/api/events/{event_id}/image", status_code=201)
+async def upload_image(event_id: int, request: Request) -> dict:
+    """ESP32 가 이벤트를 보낸 직후, 분류에 쓴 카메라 프레임(JPEG)을 body 그대로 올린다."""
+    if request.headers.get("content-type", "").split(";")[0].strip() != "image/jpeg":
+        raise HTTPException(415, "Content-Type must be image/jpeg")
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "empty body")
+    if len(body) > MAX_IMAGE_BYTES:
+        raise HTTPException(413, f"image larger than {MAX_IMAGE_BYTES} bytes")
+    if not body.startswith(b"\xff\xd8"):
+        raise HTTPException(400, "not a JPEG")
+    with db.connect() as conn:
+        if not conn.execute("SELECT 1 FROM sort_events WHERE id = ?", (event_id,)).fetchone():
+            raise HTTPException(404, "event not found")
+        (db.image_dir() / f"{event_id}.jpg").write_bytes(body)
+        conn.execute("UPDATE sort_events SET has_image = 1 WHERE id = ?", (event_id,))
+    return {"id": event_id, "bytes": len(body)}
+
+
+@app.get("/api/events/{event_id}/image", include_in_schema=True)
+def get_image(event_id: int):
+    path = db.image_dir() / f"{event_id}.jpg"
+    if not path.exists():
+        raise HTTPException(404, "no image for this event")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
 # ---------- 오분류 신고 ----------
@@ -123,6 +153,7 @@ def stats() -> dict:
         for r in conn.execute("SELECT label, COUNT(*) c FROM sort_events GROUP BY label"):
             by_label[r["label"]] = r["c"]
         needs_review = conn.execute("SELECT COUNT(*) FROM sort_events WHERE needs_review = 1").fetchone()[0]
+        with_image = conn.execute("SELECT COUNT(*) FROM sort_events WHERE has_image = 1").fetchone()[0]
         agg = conn.execute("SELECT AVG(confidence), AVG(latency_ms) FROM sort_events").fetchone()
 
         # 이벤트별 가장 최근 신고만 사용
@@ -154,6 +185,7 @@ def stats() -> dict:
         "total": total,
         "by_label": by_label,
         "needs_review": needs_review,
+        "with_image": with_image,
         "feedback_count": len(fb_rows),
         "misclassified": misclassified,
         "misclassification_rate": round(misclassified / len(fb_rows), 4) if fb_rows else 0.0,

@@ -1,8 +1,11 @@
 // AI 스마트 분리수거함 펌웨어
-// 흐름: 초음파로 투입 감지 → 카메라 촬영 → 온디바이스 분류 → 서보로 칸 이동 → 로그 버퍼 → 서버 전송
+// 흐름: 초음파로 투입 감지 → 카메라 촬영 → 온디바이스 분류 → 서보로 칸 이동 → 서버 전송(+사진)
+//       Wi-Fi 가 없으면 로그만 버퍼에 쌓았다가 나중에 전송 (사진은 메모리 절약을 위해 생략)
 #include <ESP32Servo.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
+
+#include "img_converters.h"  // esp32-camera: RGB565 프레임 → JPEG
 
 #include "camera.h"
 #include "classifier.h"
@@ -48,6 +51,34 @@ static bool postJson(const char* path, const char* body) {
   return code >= 200 && code < 300;
 }
 
+// 이벤트를 보내고 서버가 돌려준 id 를 받는다 (사진을 붙이기 위해). 실패하면 -1.
+static long postEventGetId(const char* body) {
+  if (WiFi.status() != WL_CONNECTED) return -1;
+  HTTPClient http;
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  http.begin(String(SERVER_URL) + "/api/events");
+  http.addHeader("Content-Type", "application/json");
+  int code = http.POST((uint8_t*)body, strlen(body));
+  long id = -1;
+  if (code >= 200 && code < 300) {
+    String resp = http.getString();
+    id = parseEventId(resp.c_str());
+    if (id < 0) id = 0;  // 저장은 됐지만 id 를 못 읽음 → 사진만 생략
+  }
+  http.end();
+  return id;
+}
+
+static bool postImage(long id, const uint8_t* jpg, size_t len) {
+  HTTPClient http;
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  http.begin(String(SERVER_URL) + "/api/events/" + String(id) + "/image");
+  http.addHeader("Content-Type", "image/jpeg");
+  int code = http.POST((uint8_t*)jpg, len);
+  http.end();
+  return code >= 200 && code < 300;
+}
+
 // 버퍼에 쌓인 로그를 앞에서부터 전송. 실패하면 남겨두고 다음 루프에서 재시도.
 static void flushLogs() {
   int maxPerLoop = 5;  // 한 루프에서 최대 전송 건수
@@ -83,8 +114,14 @@ static void handleItem() {
   }
   float scores[LABEL_COUNT] = {0};
   bool ok = classify(fb, scores);
-  if (fb) esp_camera_fb_return(fb);
   uint32_t latency = millis() - t0;
+
+  // 바로 보낼 수 있을 때만 사진을 JPEG 로 만든다 (오프라인이면 메모리·시간 절약)
+  const bool online = SEND_IMAGES && WiFi.status() == WL_CONNECTED && logs.empty();
+  uint8_t* jpg = nullptr;
+  size_t jpgLen = 0;
+  if (ok && online && fb && !frame2jpg(fb, JPEG_QUALITY, &jpg, &jpgLen)) jpg = nullptr;
+  if (fb) esp_camera_fb_return(fb);
 
   if (!ok) {
     Serial.println("[sort] classify failed");
@@ -99,8 +136,21 @@ static void handleItem() {
   if (d.actuate) {
     moveToBin(d.bin);
     SortEvent e{d.label, d.confidence, latency, d.bin, d.needsReview};
-    if (!logs.push(e)) Serial.println("[log] buffer full, oldest dropped");
+    bool sentNow = false;
+    if (online) {
+      char json[320];
+      if (toJson(e, DEVICE_ID, FW_VERSION, MODEL_VERSION, json, sizeof(json)) > 0) {
+        long id = postEventGetId(json);
+        sentNow = id >= 0;
+        if (id > 0 && jpg) {
+          bool okImg = postImage(id, jpg, jpgLen);
+          Serial.printf("[log] event #%ld + photo %u bytes %s\n", id, (unsigned)jpgLen, okImg ? "sent" : "failed");
+        }
+      }
+    }
+    if (!sentNow && !logs.push(e)) Serial.println("[log] buffer full, oldest dropped");
   }
+  if (jpg) free(jpg);
   digitalWrite(PIN_LED, HIGH);
 }
 

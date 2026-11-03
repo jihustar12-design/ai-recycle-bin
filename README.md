@@ -16,11 +16,12 @@ ESP32-S3가 **기기 안에서** 쓰레기를 분류(캔/페트/종이/일반)�
 ## 모델 성능
 
 TrashNet(Stanford, MIT License) 2,527장을 5개 클래스로 바꿔 학습 1,640장 / **test 410장**으로 평가했어요.
-ESP32에 들어가는 **int8 모델 기준**이고, CI(`model` 작업)가 매 push마다 test 세트로 다시 측정해요.
+ESP32에 들어가는 **int8 모델 기준**이고, 아래 수치는 CI(`model` 작업)가 매 push마다 test 세트로 직접 측정한 값이에요.
+(학습 직후 TensorFlow 기준으로는 81.5% — JPEG 디코더 차이로 1장 정도 달라짐)
 
 | 항목 | 값 |
 |---|---|
-| **정확도 (int8, ESP32용)** | **81.5%** (float32 84.4%) |
+| **정확도 (int8, ESP32용)** | **81.2%** (333/410, CI 측정) |
 | 모델 | MobileNetV2 α0.35 전이학습, 입력 160×160 RGB, **634 KB** |
 | 추론 메모리 | 445 KB (PSRAM) |
 | 참고: TrashNet 원 논문 CNN | 약 75% (6개 클래스) |
@@ -29,13 +30,13 @@ ESP32에 들어가는 **int8 모델 기준**이고, CI(`model` 작업)가 매 pu
 
 | 실제 \ 예측 | can | empty | general | paper | pet |
 |---|---|---|---|---|---|
-| **can** | 65 | 0 | 12 | 3 | 2 |
+| **can** | 66 | 0 | 11 | 3 | 2 |
 | **empty** | 0 | 77 | 0 | 5 | 0 |
-| **general** | 7 | 0 | 59 | 10 | 6 |
-| **paper** | 1 | 0 | 4 | 77 | 0 |
-| **pet** | 1 | 0 | 22 | 3 | 56 |
+| **general** | 7 | 0 | 58 | 9 | 8 |
+| **paper** | 2 | 0 | 3 | 77 | 0 |
+| **pet** | 2 | 0 | 21 | 4 | 55 |
 
-- 가장 큰 약점은 **페트 → 일반(22장)**: 일반 클래스에 섞인 유리병과 투명 페트병을 헷갈림
+- 가장 큰 약점은 **페트 → 일반(21장)**: 일반 클래스에 섞인 유리병과 투명 페트병을 헷갈림
 - 신뢰도 70% 미만은 일반 칸 + `needs_review`로 기록 → 대시보드에서 오분류 신고로 확인
 - **펌웨어 C++ 코드로 PC에서 같은 410장을 분류한 결과**(TFLite Micro): RGB888 82.2%, 카메라 형식 RGB565 78.5%, Python 결과와 예측 97.8% 일치
 - 수치는 TrashNet 촬영 환경(흰 배경·밝은 조명) 기준. 실제 상자 안 정확도는 보드 연결 후 별도 측정 예정
@@ -70,7 +71,9 @@ ai-recycle-bin/
 │   └── tests/              # 판단 로직 + 모델 추론 테스트 (g++, TFLite Micro)
 ├── server/                 # FastAPI + SQLite + pytest
 ├── dashboard/index.html    # 실시간 대시보드 (서버가 / 에서 제공)
-├── tools/fake_device.py    # 가짜 ESP32 (하드웨어 없이 전체 흐름 테스트)
+├── tools/
+│   ├── fake_device.py      # 가짜 ESP32 (사진 전송, --use-model 로 실제 모델 분류)
+│   └── samples/            # 샘플 사진 13장 (TrashNet)
 ├── docker-compose.yml
 └── .github/workflows/ci.yml
 ```
@@ -84,8 +87,10 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 
-# 2) 다른 터미널에서 가짜 장치
+# 2) 다른 터미널에서 가짜 장치 (샘플 사진과 함께 전송)
 python tools/fake_device.py --fail-rate 0.2
+#    실제 모델로 분류한 결과를 보려면 (학습 환경 model/.venv 에서)
+python tools/fake_device.py --use-model --interval 3
 
 # 3) 브라우저: http://localhost:8000  (API 문서: /docs)
 ```
@@ -121,14 +126,17 @@ python model/evaluate.py --min-accuracy 0.78                 # 모델 정확도 
 - `bin`: 0 캔, 1 페트, 2 종이, 3 일반
 - `needs_review`: 신뢰도가 기준(0.70) 미만이라 일반 칸으로 보낸 경우
 
-그 외: `POST /api/events/batch`, `GET /api/events`, `GET /api/stats`, `POST /api/feedback`, `POST /api/heartbeat`, `GET /api/devices`
+분류 순간의 사진: 이벤트 직후 `POST /api/events/{id}/image` (body = JPEG, `Content-Type: image/jpeg`, 최대 300KB).
+대시보드의 **"방금 들어온 쓰레기"** 카드와 이벤트 표에 사진이 표시돼요. Wi-Fi가 끊겨 버퍼에 쌓였던 로그는 사진 없이 전송돼요.
+
+그 외: `POST /api/events/batch`, `GET /api/events`, `GET /api/events/{id}/image`, `GET /api/stats`, `POST /api/feedback`, `POST /api/heartbeat`, `GET /api/devices`
 
 ## 진행 상황
 
 - [x] 서버 · DB · 대시보드 · 가짜 장치 · CI
 - [x] 펌웨어 골격 (가짜 분류기로 서보/서버 연동 가능)
 - [x] 공개 데이터(TrashNet) 데이터셋 구성 → `model/README.md`
-- [x] 모델 학습 (int8 81.5%) + 펌웨어 연결(TFLite Micro) + CI 정확도 검증
+- [x] 모델 학습 (int8 81.2%) + 펌웨어 연결(TFLite Micro) + CI 정확도 검증
 - [ ] (보드) 카메라·서보·센서 동작 확인
 - [ ] (보드) 실제 상자 안 정확도·추론 속도 측정
 - [ ] 상자 조립 · 시연 영상
