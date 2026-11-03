@@ -8,8 +8,8 @@
 
 namespace smartbin {
 
-// 주의: Edge Impulse 는 라벨을 알파벳순(can, empty, general, paper, pet)으로 내보낸다.
-// 순서가 이 enum 과 다르므로, 결과는 반드시 labelFromName() 으로 '이름'을 기준으로 옮길 것.
+// 주의: 모델(model/train.py, Edge Impulse 모두)의 라벨은 알파벳순(can, empty, general, paper, pet)이다.
+// 순서가 이 enum 과 다르므로, 결과는 반드시 labelFromName() 으로 '이름'을 기준으로 옮길 것 (model_runner.cpp).
 enum Label : uint8_t { LBL_CAN = 0, LBL_PET, LBL_PAPER, LBL_GENERAL, LBL_EMPTY, LABEL_COUNT };
 
 inline const char* labelName(Label l) {

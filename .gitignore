@@ -22,3 +22,6 @@ firmware/tests/test_decision
 # 학습 데이터 (model/prepare_dataset.py 로 다시 만들 수 있음)
 model/dataset/
 model/.cache/
+model/.venv/
+model/export/model_float.keras
+firmware/tests/test_model

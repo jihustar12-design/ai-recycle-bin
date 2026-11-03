@@ -60,8 +60,16 @@ jobs:
       - run: make -C firmware/tests
 
   firmware-build:
-    name: Firmware build (XIAO ESP32S3)
+    name: Firmware build (XIAO ESP32S3, ${{ matrix.variant }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: tflite-model     # 학습한 모델 + TFLite Micro (코어에 포함된 esp-tflite-micro)
+            flags: ""
+          - variant: stub-classifier  # 가짜 분류기 (모델 없이 서보·서버 연동 테스트용)
+            flags: "-DUSE_TFLITE_MODEL=0"
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-arduino-cli@v2
@@ -85,12 +93,49 @@ jobs:
         run: |
           arduino-cli compile \
             --fqbn esp32:esp32:XIAO_ESP32S3:PSRAM=opi \
+            --build-property "compiler.cpp.extra_flags=${{ matrix.flags }}" \
             --output-dir build \
-            firmware/smart_bin
+            firmware/smart_bin 2>&1 | tee build.log
+          grep -E "Sketch uses|Global variables" build.log >> "$GITHUB_STEP_SUMMARY" || true
       - uses: actions/upload-artifact@v4
         with:
-          name: firmware-bin
+          name: firmware-${{ matrix.variant }}
           path: build/*.bin
+
+  model:
+    name: Model accuracy (int8 model on TrashNet test)
+    runs-on: ubuntu-latest
+    env:
+      TFLM_SHA: 6368cd2ddebb72e047509ccbc529afc321e804b9  # espressif/esp-tflite-micro (PC 테스트에 쓴 버전 고정)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pillow ai-edge-litert
+      - name: Cache TrashNet / TFLite Micro
+        uses: actions/cache@v4
+        with:
+          path: |
+            model/.cache
+            build/esp-tflite-micro
+            firmware/tests/build
+          key: model-${{ env.TFLM_SHA }}-${{ hashFiles('firmware/tests/Makefile') }}
+      - name: Build test set from TrashNet (same script, same seed)
+        run: python model/prepare_dataset.py
+      - name: Python — accuracy of committed int8 model
+        run: python model/evaluate.py --min-accuracy 0.78 --dump build/dump
+      - name: Fetch TFLite Micro
+        run: |
+          if [ ! -d build/esp-tflite-micro ]; then
+            curl -sSL -o /tmp/tflm.zip "https://github.com/espressif/esp-tflite-micro/archive/${TFLM_SHA}.zip"
+            unzip -q /tmp/tflm.zip -d build && mv "build/esp-tflite-micro-${TFLM_SHA}" build/esp-tflite-micro
+          fi
+      - name: C++ — firmware preprocessing + TFLite Micro on the same test set
+        run: |
+          make -C firmware/tests -j4 model TFLM=$PWD/build/esp-tflite-micro DUMP=$PWD/build/dump \
+            MIN888=0.78 MIN565=0.75 | tee cpp.log
+          { echo; echo '### 펌웨어 C++ 추론 (TFLite Micro, PC)'; echo '```'; tail -6 cpp.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
   docker:
     name: Docker build

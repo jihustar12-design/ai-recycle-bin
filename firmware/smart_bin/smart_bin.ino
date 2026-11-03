@@ -75,7 +75,12 @@ static void handleItem() {
   digitalWrite(PIN_LED, LOW);
   uint32_t t0 = millis();
 
-  camera_fb_t* fb = cameraOk ? cameraCapture() : nullptr;
+  camera_fb_t* fb = nullptr;
+  if (cameraOk) {
+    camera_fb_t* stale = cameraCapture();  // 투입 전 프레임은 버리고
+    if (stale) esp_camera_fb_return(stale);
+    fb = cameraCapture();                   // 물체가 들어온 뒤의 프레임 사용
+  }
   float scores[LABEL_COUNT] = {0};
   bool ok = classify(fb, scores);
   if (fb) esp_camera_fb_return(fb);
@@ -110,7 +115,9 @@ void setup() {
   servo.write(SERVO_HOME_ANGLE);
 
   cameraOk = cameraInit();
-  Serial.printf("[boot] fw %s, model %s, camera %s\n", FW_VERSION, MODEL_VERSION, cameraOk ? "ok" : "FAIL");
+  bool modelOk = classifierBegin();
+  Serial.printf("[boot] fw %s, model %s (%s), camera %s\n", FW_VERSION, MODEL_VERSION, modelOk ? "ok" : "FAIL",
+                cameraOk ? "ok" : "FAIL");
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);

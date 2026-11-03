@@ -1,0 +1,150 @@
+{
+  "dataset": "TrashNet (MIT) → 5 classes",
+  "input": [
+    160,
+    160,
+    3
+  ],
+  "alpha": 0.35,
+  "labels": [
+    "can",
+    "empty",
+    "general",
+    "paper",
+    "pet"
+  ],
+  "train": 1395,
+  "val": 245,
+  "test": 410,
+  "float32": {
+    "accuracy": 0.8439,
+    "confusion": [
+      [
+        69,
+        0,
+        7,
+        4,
+        2
+      ],
+      [
+        0,
+        81,
+        0,
+        1,
+        0
+      ],
+      [
+        12,
+        0,
+        52,
+        7,
+        11
+      ],
+      [
+        2,
+        0,
+        2,
+        78,
+        0
+      ],
+      [
+        4,
+        0,
+        8,
+        4,
+        66
+      ]
+    ],
+    "per_class": {
+      "can": {
+        "precision": 0.7931,
+        "recall": 0.8415
+      },
+      "empty": {
+        "precision": 1.0,
+        "recall": 0.9878
+      },
+      "general": {
+        "precision": 0.7536,
+        "recall": 0.6341
+      },
+      "paper": {
+        "precision": 0.8298,
+        "recall": 0.9512
+      },
+      "pet": {
+        "precision": 0.8354,
+        "recall": 0.8049
+      }
+    }
+  },
+  "int8": {
+    "accuracy": 0.8146,
+    "confusion": [
+      [
+        65,
+        0,
+        12,
+        3,
+        2
+      ],
+      [
+        0,
+        77,
+        0,
+        5,
+        0
+      ],
+      [
+        7,
+        0,
+        59,
+        10,
+        6
+      ],
+      [
+        1,
+        0,
+        4,
+        77,
+        0
+      ],
+      [
+        1,
+        0,
+        22,
+        3,
+        56
+      ]
+    ],
+    "per_class": {
+      "can": {
+        "precision": 0.8784,
+        "recall": 0.7927
+      },
+      "empty": {
+        "precision": 1.0,
+        "recall": 0.939
+      },
+      "general": {
+        "precision": 0.6082,
+        "recall": 0.7195
+      },
+      "paper": {
+        "precision": 0.7857,
+        "recall": 0.939
+      },
+      "pet": {
+        "precision": 0.875,
+        "recall": 0.6829
+      }
+    }
+  },
+  "tflite_bytes": 649224,
+  "input_quant": {
+    "scale": 1.0,
+    "zero_point": -128
+  },
+  "train_minutes": 0.9,
+  "tensorflow": "2.21.0"
+}

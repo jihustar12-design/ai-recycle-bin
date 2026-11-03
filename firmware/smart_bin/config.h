@@ -2,12 +2,19 @@
 #pragma once
 
 #define FW_VERSION    "0.1.0"
-#define MODEL_VERSION "stub"   // Edge Impulse 모델을 넣으면 "v0-phone", "v1-esp32" 등으로 변경
-
-// 1이면 Edge Impulse 모델 사용, 0이면 가짜 분류기(하드웨어/서버 연동 테스트용)
-#ifndef USE_EDGE_IMPULSE
-#define USE_EDGE_IMPULSE 0
+// 1: 학습한 TFLite 모델(model_data.h) 사용 / 0: 가짜 분류기(모델 없이 서보·서버 연동 테스트)
+#ifndef USE_TFLITE_MODEL
+#define USE_TFLITE_MODEL 1
 #endif
+
+#if USE_TFLITE_MODEL
+#define MODEL_VERSION "v1-trashnet-160-fast"  // 모델을 다시 학습하면 바꿔서 대시보드에서 비교
+#else
+#define MODEL_VERSION "stub"
+#endif
+
+// 모델 계산 메모리 (PC 측정 445KB + 여유). PSRAM 에 할당
+#define TENSOR_ARENA_SIZE (600 * 1024)
 
 // 판단 기준
 #define CONF_THRESHOLD 0.70f   // tools/fake_device.py 와 동일하게 유지

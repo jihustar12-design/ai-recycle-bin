@@ -4,27 +4,51 @@
 
 #include "config.h"
 
-#if USE_EDGE_IMPULSE
+#if USE_TFLITE_MODEL
 // ─────────────────────────────────────────────────────────────────────────────
-// Edge Impulse 모델 연결 (보드를 다시 잡은 뒤 진행)
-//  1. Edge Impulse Studio → Deployment → "Arduino library" 로 zip 다운로드
-//  2. Arduino IDE: 스케치 → 라이브러리 포함 → .ZIP 라이브러리 추가
-//  3. 아래 include 이름을 내보낸 라이브러리 이름에 맞게 변경
-//  4. Edge Impulse 예제(esp32_camera)의 ei_camera_get_data / 리사이즈 코드를 참고해 구현
-//  5. config.h 의 USE_EDGE_IMPULSE 를 1, MODEL_VERSION 을 "v0-phone" 등으로 변경
-//  * Edge Impulse 라벨은 알파벳순이라 Label enum 순서와 다르다. 결과는 이름으로 옮길 것:
-//
-//      for (size_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; ++i) {
-//        int idx = smartbin::labelFromName(result.classification[i].label);
-//        if (idx >= 0) scores[idx] = result.classification[i].value;
-//      }
+// 실제 모델: model/train.py 로 학습한 int8 MobileNetV2 (model_data.h)
+//   카메라 RGB565 → 가운데 크롭 + 160x160 축소(preprocess.h) → TFLite Micro 추론(model_runner)
+//   같은 C++ 코드를 PC 에서 test 세트로 검증한다: make -C firmware/tests model
 // ─────────────────────────────────────────────────────────────────────────────
-#error "Edge Impulse 라이브러리를 연결한 뒤 이 줄을 지우고 classify() 를 구현하세요"
+#include "esp_heap_caps.h"
+#include "model_runner.h"
+#include "preprocess.h"
+
+static smartbin::ModelRunner runner;
+static bool ready = false;
+
+bool classifierBegin() {
+  // 모델 계산 메모리(약 450KB)는 PSRAM 에 둔다
+  uint8_t* arena = (uint8_t*)heap_caps_malloc(TENSOR_ARENA_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!arena) {
+    Serial.println("[model] PSRAM arena alloc failed (Tools > PSRAM: OPI PSRAM 확인)");
+    return false;
+  }
+  ready = runner.begin(arena, TENSOR_ARENA_SIZE);
+  if (ready) {
+    Serial.printf("[model] ready, arena %u/%u bytes\n", (unsigned)runner.arenaUsedBytes(),
+                  (unsigned)TENSOR_ARENA_SIZE);
+  } else {
+    Serial.printf("[model] init failed: %s\n", runner.error());
+  }
+  return ready;
+}
+
+bool classify(camera_fb_t* fb, float* scores) {
+  if (!ready || !fb || fb->format != PIXFORMAT_RGB565) return false;
+  smartbin::toModelInput(smartbin::Rgb565BE{fb->buf, (int)fb->width}, fb->width, fb->height,
+                         runner.inputSize(), runner.inputScale(), runner.inputZeroPoint(), runner.input());
+  return runner.invoke(scores);
+}
+
 #else
+// ─────────────────────────────────────────────────────────────────────────────
+// 가짜 분류기: 모델 없이 서보/서버 연동을 확인할 때 (config.h USE_TFLITE_MODEL 0)
+// ─────────────────────────────────────────────────────────────────────────────
+bool classifierBegin() { return true; }
 
 bool classify(camera_fb_t* fb, float* scores) {
   (void)fb;
-  // 가짜 분류기: 한 라벨에 높은 점수, 가끔 낮은 신뢰도도 섞음
   int winner = random(0, smartbin::LBL_GENERAL + 1);
   float top = random(0, 100) < 15 ? random(40, 69) / 100.0f : random(75, 99) / 100.0f;
   float rest = (1.0f - top) / (smartbin::LABEL_COUNT - 1);
